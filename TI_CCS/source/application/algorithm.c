@@ -7,34 +7,45 @@
 
 
 #include "global.h"
+#include <stdlib.h>
 
 ///////////////////////////////////////////////////////////////////
 
-/* we save the following information for analyze the learning process , and also for debugging the system */
+/* we save the following information for analyzing the learning process , and also for debugging the system */
 
+uint8_t TESTING_FLAG = 0;  // to show if we are testing the model, it will be set to 1 in the beginning of testQLearning()
 
-#pragma LOCATION(QtableLog, 0x11000);  // log the qtable of each iteration
+uint8_t IMAGE_BASED = 1;  // 1: image-based, 0: audio-based
+
+#pragma LOCATION(QtableLog, 0x11000);  // log the qtable of each iteration,
 #pragma PERSISTENT(QtableLog);
-float QtableLog[10][StateNum][ActionNum] = {0};
+float QtableLog[10][StateNum][ActionNum] = {0}; // it supports to log 10 qtables at max
 
 
-#pragma LOCATION(qtable, 0x11C80);  // the most updated qtable saved here
+#pragma LOCATION(qtable, 0x11A00);  // the most updated qtable saved here, addr for StateNum = 16
 #pragma PERSISTENT(qtable);
 float qtable[StateNum][ActionNum] =
 {0};
 
 
-float SavedQtableCnt_Offset = 0;        // offset, change this every time
+/* how many iterations it has done so far in total, change this at each re-erase
+ * because our QtableLog can only save 10 qtables at max, we have to use this variable
+ * to record how many iterations done in total
+ *  */
+float SavedQtableCnt_Offset = 0;
 
-#pragma PERSISTENT(SumOfConvergedResult);  // record the convergence result of each iteration
-uint16_t SumOfConvergedResult = 0;
+
+#pragma PERSISTENT(SumOfConvergedResult);  // record the convergence result at the end of each iteration
+uint16_t SumOfConvergedResult =0;
 
 
 //////////////////////////////////////////////////////
- /* for RLEvent model */
+ /* for Phase-1 Event Profiling
+  * comment this section if you are not doing Phase-1
+  * */
 //#pragma LOCATION(RewardLog, 0x11DC0);  //
 //#pragma PERSISTENT(RewardLog);
-//float RewardLog[QtableLogCapacity][StepNum] = {0};  // for RLEvent model, StepNum = 40 = 1200/30
+//float RewardLog[QtableLogCapacity][StepNum] = {0};  // for Phase-1, StepNum = 40 = 1200/30
 //
 //#pragma LOCATION(ActionLog, 0x12400);  //
 //#pragma PERSISTENT(ActionLog);
@@ -64,29 +75,30 @@ uint16_t SumOfConvergedResult = 0;
 
 //////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////
-// /* for RLEnergy model */
-
-#pragma LOCATION(RewardLog, 0x11DC0);  // log the reward we get in each iteration
+/* for Phase-2/Phase-3
+ * comment this section if you are doing Phase-1
+ * */
+#pragma LOCATION(RewardLog, 0x11B00);  // log the reward we get in each iteration
 #pragma PERSISTENT(RewardLog);
-float RewardLog[QtableLogCapacity][StepNum] = {0}; // for RLEnergy model, StepNum = 4
+float RewardLog[QtableLogCapacity][StepNum] = {0}; // for Phase-2 RL, StepNum = 4
 
-#pragma LOCATION(ActionLog, 0x11E60);  // log the actions we take in each iteration
+#pragma LOCATION(ActionLog, 0x11BA0);  // log the actions we take in each iteration
 #pragma PERSISTENT(ActionLog);
 float ActionLog[QtableLogCapacity][StepNum] = {0};
 
-#pragma LOCATION(StateLog, 0x11F00);  // log the state sequence the system goes through
+#pragma LOCATION(StateLog, 0x11C40);  // log the state sequence the system goes through
 #pragma PERSISTENT(StateLog);
 float StateLog[QtableLogCapacity][StepNum] = {0};
 
-#pragma LOCATION(VoltLog, 0x11FA0);  // log the voltage detected in getEnergyLevel()
+#pragma LOCATION(VoltLog, 0x11CE0);  // log the voltage detected in getEnergyLevel()
 #pragma PERSISTENT(VoltLog);
 float VoltLog[QtableLogCapacity][StepNum] = {0};
 
-#pragma LOCATION(SWModeLog, 0x12040);  // log the SWMode detected in getEnergyLevel()
+#pragma LOCATION(SWModeLog, 0x11D80);  // log the SWMode detected in getEnergyLevel()
 #pragma PERSISTENT(SWModeLog);
 float SWModeLog[QtableLogCapacity][StepNum] = {0};
 
-#pragma LOCATION(NumSenseLog, 0x120E0);  // log the number of waking ups in each state
+#pragma LOCATION(NumSenseLog, 0x11E20);  // log the number of waking ups in each state
 #pragma PERSISTENT(NumSenseLog);
 float NumSenseLog[QtableLogCapacity][StepNum] = {0};
 
@@ -100,13 +112,11 @@ uint8_t pval_table[StateNum] = {0};
 
 
 
-#if TRAINING
-    #pragma PERSISTENT(SavedQtableCnt);  // counter for saving qtable
-    uint16_t SavedQtableCnt = 0; // for training
-#else
-    #pragma PERSISTENT(SavedQtableCnt);  // counter for saving qtable
-    uint16_t SavedQtableCnt = 1; // for testing
-#endif
+
+#pragma PERSISTENT(SavedQtableCnt);  // to count the number of saved qtable after an erase
+uint16_t SavedQtableCnt = 0; //
+
+
 
 
 #pragma PERSISTENT(ConvergedFlag);  // set the flag to 1, if the system is converged
@@ -120,39 +130,37 @@ uint16_t ConvergedFlag = 0;
 
 
 
-/* Auxiliary functions for saving useful information above */
+/* Auxiliary functions for saving useful information above
+ * Those variables are only for one iteration, at the end of each iteration
+ * they will be copied to non-volatile memory and then be reset
+ * */
 #pragma PERSISTENT(Actions); // log actions taken in one iteration, we will copy it to our ActionLog at the end of each iteration
 float Actions[StepNum] = {0};
 
-#pragma PERSISTENT(Rewards); //
+#pragma PERSISTENT(Rewards); // log rewards in one iteration, we will copy it to our RewardLog at the end of each iteration
 float Rewards[StepNum] = {0};
 
-#pragma PERSISTENT(States); //
+#pragma PERSISTENT(States); // log the state, will be copied to StateLog at the end of each iteration
 float States[StepNum] = {0};
 
-#pragma PERSISTENT(Volts); //
+#pragma PERSISTENT(Volts); // log the voltage, will be copied to VoltLog at the end of each iteration
 float Volts[StepNum] = {0};
 
-#pragma PERSISTENT(SWModes); //
+#pragma PERSISTENT(SWModes); // log the switch modes, will be copied to SWModeLog at the end of each iteration
 float SWModes[StepNum] = {0};
 
-#pragma PERSISTENT(NumSense); //
+#pragma PERSISTENT(NumSense); // log the number of wake-ups, will be copied to NumSenseLog at the end of each iteration
 float NumSense[StepNum] = {0};
 
 //////////////////////////////////////////////////////////
-
-#pragma PERSISTENT(Preqtable); // compare qtable and Preqtable for checking convergence
+/* compare qtable and Preqtable for checking convergence
+ * our convergence condition is there is only small changes in a number [n] of consecutive iterations
+ * */
+#pragma PERSISTENT(Preqtable); //
 float Preqtable[StateNum][ActionNum] = {0};
 
 #pragma PERSISTENT(Iteration);
 uint8_t Iteration = 0;
-
-#pragma PERSISTENT(episode);
-uint8_t episode = 0;
-
-#pragma PERSISTENT(epsilon);
-float epsilon = 1;
-
 
 
 #pragma PERSISTENT(reward);
@@ -180,14 +188,17 @@ uint16_t NumOfRestart = 0;
 
 
 
+/* action: means how many seconds one event detection happens once
+ * e.g. 5 means event detection happens one every 5 seconds
+ * e.g. 100 means not waking up at all since our state duration is only 30-second long
+ */
+uint16_t Action_List[ActionNum] = {100,5,2,1};  // for Phase-2/Phase-3 RL
+//uint16_t Action_List[ActionNum] = {100,2}; // {100,1}     // for Phase-1 Event Profiling
 
-uint16_t Action_List[ActionNum] = {100,5,2,1};  // for RLEnergy model
-//uint16_t Action_List[ActionNum] = {100,2};      // for RLEvent model
 
 
 
-
-
+/* for debug, saving useful information  */
 #pragma LOCATION(TestResults, 0x14000);
 #pragma PERSISTENT(TestResults);
 uint16_t TestResults[1200][2] = {0};
@@ -202,7 +213,8 @@ uint16_t TestResults[1200][2] = {0};
  * after reboot, for the 1st entry into step(), we need to set the TimerA_StateSwitch according to the time left in current state
  * after reboot, for the 2nd/later entry into step(), we set TimerA_StateSwitch to StateDuration
  */
-uint8_t TimerA_StateSwitch_InitFlag = 0;  //
+uint8_t TimerA_StateSwitch_InitFlag = 0;  // to show if it is the first entry into step()
+
 
 /*
  * Race Condition: if TimerA_StateSwitch ISR happens when the TIMER_BASE_PeriodicWakingup ISR is happening
@@ -210,29 +222,28 @@ uint8_t TimerA_StateSwitch_InitFlag = 0;  //
  * we need a flag to notify TIMER_BASE_PeriodicWakingup ISR, if TimerA_StateSwitch ISR happens within it,
  * TIMER_BASE_PeriodicWakingup ISR should make the program exit LPM
  */
-
-
-uint8_t StateSwitchFlag = 0;
-uint8_t PeriodicWakingupFlag = 0;
+uint8_t StateSwitchFlag = 0;   // 1 means state switch is happening
+uint8_t PeriodicWakingupFlag = 0; // 1 means periodic waking up is happening
 
 
 
 uint16_t new_state;
-uint16_t TotalEnergyLevels = 5;
 
-int EL,PreEL,PrePreEL,PrePrePreEL;
-int Preaction = -1,PrePreaction = -1;
+int EL; //PreEL,PrePreEL,PrePrePreEL;
+//int Preaction = -1,PrePreaction = -1;
+int termination_flag = 0;  // if volt < 2000 (2.0V), we set the termination_flag to 1 to terminate this iteration
 
 
 
+
+
+
+
+
 ////////////////////////////////////////////////////////////////////////////////////
+/* Phase-1, how many iterations Phase-1 needs to converge */
 ////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-/* The implementation of RLEvent model, how many iterations it needs to converge */
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-void RLEventConvergeRate(void){
+void Phase1ConvergeRate(void){
 
 
     uint16_t LeftTimeofCurState,initial_step;   // left time of current state
@@ -252,7 +263,7 @@ void RLEventConvergeRate(void){
 
 
     /* reset Actions and Rewards for the first iteration after a new erase*/
-    if(NumOfRestart == 1){
+    if(NumOfRestart == 1){ // for log
         memset(Actions,'1',4*StepNum);
         memset(Rewards,'1',4*StepNum);
         memset(States,'1',4*StepNum);
@@ -262,9 +273,11 @@ void RLEventConvergeRate(void){
     }
 
 
-    GetTime();
-    initial_step = Time / StateDuration;  // Call GetTime(), decide which state it is now
-    LeftTimeofCurState = StateDuration - (Time % StateDuration);  // how many seconds left in this current state
+//    GetTime();
+//    initial_step = Time / StateDuration;  // Call GetTime(), decide which state it is now
+//    LeftTimeofCurState = StateDuration - (Time % StateDuration);  // how many seconds left in this current state
+    initial_step = 0;
+    LeftTimeofCurState = StateDuration;  // in DCOSS2021, we eliminated DS3231 RTC. We consider a power-off will automatically end this iteration
 
 
     if(PowerOutageFlag == 1){  // if power outage happens
@@ -283,10 +296,11 @@ void RLEventConvergeRate(void){
     for(step = initial_step; step < StepNum; step++){
 
         if( pval_table[step] > 0 ){  // if this state has been visited by action=1
-            action = 0;
+            action = 0;   // each state only be profiled once
         }
         else{ // otherwise, we randomly pick up an action
-            action = Get_RandomAction(ActionNum);
+//            action = Get_RandomAction(ActionNum);
+            action = 1;
         }
 
         /* check if this action=1 is executable based on the current energy level */
@@ -296,7 +310,7 @@ void RLEventConvergeRate(void){
         }
 
         PowerOutageFlag = 1;  // set flag
-        run_step(LeftTimeofCurState,action); // run
+        run_step(LeftTimeofCurState,action); // run, power outage may happen during this process
         PowerOutageFlag = 0;  // if the system does not die, it will reset the flag
 
         /* update the qtable */
@@ -320,42 +334,26 @@ void RLEventConvergeRate(void){
 
 
 
-
-
-
 ////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-/*RLEnergy Model*/
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
+/* Phase-2, RL learning phase*/
 ////////////////////////////////////////////////////////////////////////////////////
 void runQLearning(void){
 
-
-    /* if the system has converged, we blink the LED slowly */
-    if(ConvergedFlag == 1){
-        while(1){
-            P1OUT |= BIT0;
-            __delay_cycles(4000000);
-            P1OUT &= ~BIT0;
-            __delay_cycles(8000000);
-        }
-    }
-
-
+    int i,j;
 
     uint16_t LeftTimeofCurState,initial_step;   // left time of current state
     float future_reward;
-    int i,j;
 
 
+//    GetTime();
+//    initial_step = Time / StateDuration;  // Call GetTime(), decide which state it is now
+//    LeftTimeofCurState = StateDuration - (Time % StateDuration);  // how many seconds left in this current state
     initial_step = 0;
-    LeftTimeofCurState = StateDuration;
+    LeftTimeofCurState = StateDuration;  // in DCOSS2021, we eliminated DS3231 RTC. We consider a power-off will automatically end this iteration
 
     /* reset Actions and Rewards for the first iteration after a new erase*/
     if(NumOfRestart == 1){
-        memset(Actions,'1',4*StepNum);
+        memset(Actions,'1',4*StepNum); // each float has 4-byte
         memset(Rewards,'1',4*StepNum);
         memset(States,'1',4*StepNum);
         memset(Volts,'1',4*StepNum);
@@ -363,50 +361,6 @@ void runQLearning(void){
         memset(NumSense,'1',4*StepNum);
     }
 
-
-    /* if the system wakes up from a power outage */
-    if( PowerOutageFlag == 1 ){ // PowerOutageFlag == 1 means the system just waked up from a power outage
-
-
-        // if it restarts we update the qtable and then stop learning of this iteration
-        if (step == StepNum - 1) // if it comes to the last step
-            future_reward = 0;
-        else{
-            new_state = (step + 1) * TotalEnergyLevels + 0;  // EL = 0
-            future_reward = qtable[new_state][max_q_act(qtable[new_state])];
-        }
-
-
-        /* after a power outage, we update the qtable here */
-        // first we save the information we need for further off-line analysis
-        Rewards[step] = reward;
-        Actions[step] = action;
-        States[step] = state;
-
-        qtable[state][action] = qtable[state][action] + LEARNING_RATE * (reward + GAMMA * future_reward - qtable[state][action]);
-        reward = 0;
-        pval_table[state] = 1;
-
-        PowerOutageFlag = 0; // reset the flag
-
-        /* operations for end of one iteration */
-        EndofIteration(0);
-
-    }
-
-
-
-
-    /* initialize variables */
-
-    /* those Pre variables are used in getEnergyLevel(); the hardware of system can not distinguish between EL=0 and EL=1 when SW_Mode = 4 */
-    /* so we need to use previous EL and Action information to induce which energy state the system is now */
-    PrePreEL = -1;
-    PreEL = -1;
-    PrePrePreEL = -1;
-
-    Preaction = -1;
-    PrePreaction = -1;
 
     /* copy current qtable to Preqtable */
     for(i = 0; i < StateNum; i++){
@@ -428,8 +382,14 @@ void runQLearning(void){
         }
     }
 
+
     /* start a new iteration */
     for(step = initial_step; step < StepNum; step++){
+
+        /* if volt < 2000 (2.0V), we terminate this iteration */
+        if (termination_flag == 1){
+            break;
+        }
 
 
         /* get energy level and state*/
@@ -439,24 +399,16 @@ void runQLearning(void){
             state = step*TotalEnergyLevels + EL;
         }
 
-        /* pick an action randomly */
+        /* select an action randomly */
         action = Get_RandomAction(ActionNum);
 
 
-
-//        /* prioritize action=3 if this state has been visited while its action=3 has not */
-//        if( pval_table[state] == 1){
-//            if(qtable[state][3] == 0){
-//                action = 3;
-//            }
-//        }
-
-
+        // for debug, manually control actions
 //        if(SavedQtableCnt == 0){
 //
-//            if(step == 0) action = 0;  // for debug
-//            else if(step == 1) action = 1;
-//            else if(step == 2) action = 2;
+//            if(step == 0) action = 3;  // for debug
+//            else if(step == 1) action = 3;
+//            else if(step == 2) action = 3;
 //            else if(step == 3) action = 3;
 //        }
 //        else if(SavedQtableCnt == 1){
@@ -469,31 +421,145 @@ void runQLearning(void){
 //        else if(SavedQtableCnt == 2){
 //
 //            if(step == 0) action = 3;  // for debug
-//            else if(step == 1) action = 0;
-//            else if(step == 2) action = 0;
+//            else if(step == 1) action = 2;
+//            else if(step == 2) action =0;
 //            else if(step == 3) action = 3;
 //        }
 //        else{
 //            action = 3;
 //        }
+//        action = 3;
 
 
-//
-//        if(step == 0) action = 2;  // for debug
-//        else if(step == 1) action = 3;
-//        else if(step == 2) action = 3;
+//        if(step == 0) action = 0;  // for debug
+//        else if(step == 1) action = 0;
+//        else if(step == 2) action = 0;
+//        else action = 1;
 
 
 
 
-        PowerOutageFlag = 1;  // set flag
+        PowerOutageFlag = 1;  // set flag to 1, if power-off happens during run_step()
+                              // PowerOutageFlag will remain on 1 after a restart
+                              // so we will be able to know a power-off happened
+
+
+        run_step(LeftTimeofCurState,action);  // execute one action, which takes LeftTimeofCurState seconds to finish
+
+        PowerOutageFlag = 0;  // if the system does not power-off during run_step(), make PowerOutageFlag to 0
+                              // which means a power-off did not happen
+
+
+        if (step == StepNum - 1) // if it comes to the last step
+            future_reward = 0;
+        else{
+            SWModes[step+1] = get_SW_Mode();   // for log
+            Volts[step+1] = getEnergyLevel(); // get energy level, for log
+
+            new_state = (step + 1) * TotalEnergyLevels + EL;
+            future_reward = qtable[new_state][max_q_act(qtable[new_state])];
+        }
+
+
+        /* update the qtable */
+        // first we save the information we need for further off-line analysis
+        Rewards[step] = reward;  // for log
+        Actions[step] = action;  // for log
+        States[step] = state;    // for log
+
+        qtable[state][action] = qtable[state][action] + LEARNING_RATE * (reward + GAMMA * future_reward - qtable[state][action]); // update qtable
+        reward = 0;  // reset reward
+        state = new_state;  // go to next state
+        pval_table[state] = 1;  // mark this state as it has been visited now
+
+        __no_operation();
+
+
+
+    }
+
+    /* operations for end of one iteration */
+    EndofIteration(0);
+
+}
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////
+/* Phase-3, RL exploitation phase */
+////////////////////////////////////////////////////////////////////////////////////
+void testQLearning(void){
+
+    int i,j;
+
+    TESTING_FLAG = 1;
+
+
+    /* if already 10 runs, we blink the LED */
+    if(SavedQtableCnt >= 10){
+        while(1){
+            for(i=0; i<3; i++){  // blink
+                GPIO_setOutputHighOnPin(REDLED);
+                __delay_cycles(200000);
+                GPIO_setOutputLowOnPin(REDLED);
+                __delay_cycles(200000);
+            }
+        }
+    }
+
+
+
+    uint16_t LeftTimeofCurState,initial_step;   // left time of current state
+    float future_reward;
+
+
+//    GetTime();
+//    initial_step = Time / StateDuration;  // Call GetTime(), decide which state it is now
+//    LeftTimeofCurState = StateDuration - (Time % StateDuration);  // how many seconds left in this current state
+    initial_step = 0;
+    LeftTimeofCurState = StateDuration;  // in DCOSS2021, we eliminated DS3231 RTC. We consider a power-off will automatically end this iteration
+
+    /* reset Actions and Rewards for the first iteration after a new erase*/
+    if(NumOfRestart == 1){
+        memset(Actions,'1',4*StepNum); // each float has 4-byte
+        memset(Rewards,'1',4*StepNum);
+        memset(States,'1',4*StepNum);
+        memset(Volts,'1',4*StepNum);
+        memset(SWModes,'1',4*StepNum);
+        memset(NumSense,'1',4*StepNum);
+    }
+
+
+    /* copy current qtable to Preqtable */
+    for(i = 0; i < StateNum; i++){
+        for(j = 0; j < ActionNum; j++){
+            Preqtable[i][j] = qtable[i][j];
+        }
+    }
+
+
+    /* start a new iteration */
+    for(step = initial_step; step < StepNum; step++){
+
+        /* if volt < 2000 (2.0V), we terminate this iteration */
+        if (termination_flag == 1){
+            break;
+        }
+
+
+        /* get energy level and state*/
+        if (step == 0) {
+            SWModes[0] = get_SW_Mode();  // convert SW_Mode into integer
+            Volts[0] = getEnergyLevel();
+            state = step*TotalEnergyLevels + EL;
+        }
+
+        // pick up an action with max value according to the qtable
+        action = max_q_act(qtable[state]);
+        action = 3;
+
         run_step(LeftTimeofCurState,action);
-        PowerOutageFlag = 0;  // if the system does not die, it will reset the flag
-
-        /* save Pre energy level */
-        PrePrePreEL = PrePreEL;
-        PrePreEL = PreEL;
-        PreEL = EL;
 
 
         if (step == StepNum - 1) // if it comes to the last step
@@ -512,127 +578,18 @@ void runQLearning(void){
         Actions[step] = action;
         States[step] = state;
 
-        qtable[state][action] = qtable[state][action] + LEARNING_RATE * (reward + GAMMA * future_reward - qtable[state][action]);
         reward = 0;
         state = new_state;
-        pval_table[state] = 1;
 
         __no_operation();
 
-        /* save Pre actions */
-        PrePreaction = Preaction;
-        Preaction = action;
+
 
     }
 
     /* operations for end of one iteration */
     EndofIteration(0);
 
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-/* test how the system works using the converged qtable */
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-void testQLearning(void){
-
-
-    uint16_t LeftTimeofCurState,initial_step;   // left time of current state
-
-
-
-    initial_step = 0;
-    LeftTimeofCurState = StateDuration;
-
-
-    if( PowerOutageFlag == 1 ){ // PowerOutageFlag == 1 means the system just waked up from a power outage
-
-
-        PowerOutageFlag = 0; // reset the flag
-        SavedQtableCnt++;
-
-        /* turn on Red LED, this iteration ends here*/
-        P1OUT |= BIT0;
-
-        /* stop the program */
-        __bis_SR_register(LPM3_bits + GIE);
-
-
-    }
-
-
-
-    /* initialize the Pre variables */
-    // those Pre variables are used in getEnergyLevel(); the hardware of system can not distinguish between EL=0 and EL=1 when SW_Mode = 4
-    // so we need to use previous EL and Action information to induce which energy state the system is now
-    PrePreEL = -1;
-    PreEL = -1;
-    PrePrePreEL = -1;
-
-    Preaction = -1;
-    PrePreaction = -1;
-
-    for(step = initial_step; step < StepNum; step++){
-
-
-        // get energy level
-        if (step == 0) {
-            getEnergyLevel();
-            state = step*TotalEnergyLevels + EL;
-        }
-
-        // pick up an action with max value according to the qtable
-        action = max_q_act(qtable[state]); // Get_RandomAction(ActionNum);
-
-
-
-        PowerOutageFlag = 1;  // set flag
-
-        run_step(LeftTimeofCurState,action);
-
-        PowerOutageFlag = 0;  // if the system does not die, it will reset the flag
-
-        /* save Pre energy level */
-        PrePrePreEL = PrePreEL;
-        PrePreEL = PreEL;
-        PreEL = EL;
-
-        /* get new energy level at the end of each step*/
-        getEnergyLevel();
-
-        if(step != StepNum - 1)
-            new_state = (step + 1) * TotalEnergyLevels + EL;
-
-
-        state = new_state;
-
-        __no_operation();
-
-        /* save Pre actions */
-        PrePreaction = Preaction;
-        Preaction = action;
-
-    }
-
-
-    SavedQtableCnt++;
-
-    /* after one round of run, stop all timers */
-    Timer_A_stop(TIMER_BASE_PeriodicWakingup);       // set MC = 00
-    Timer_A_stop(TIMER_BASE_StateSwitch);            // set MC = 00
-    Timer_B_stop(TIMER_B0_BASE);                     // set MC = 00
-
-    /* turn on Red LED */
-    P1OUT |= BIT0;
-
-
-    //// during initial test, we only run one round and then stop
-    __bis_SR_register(LPM3_bits + GIE);
 
 }
 
@@ -661,7 +618,7 @@ void run_step(uint16_t LeftTimeofCurState, uint8_t action){
 
     /* StateSwitch */
     /* according to how much time left for this state, re-initialize the timer initTimerA_StateSwitch */
-    if(TimerA_StateSwitch_InitFlag == 0){
+    if(TimerA_StateSwitch_InitFlag == 0){ // for the 1st time of entering run_step()
         // if this is the first time entering step() after a reboot
         // only initialize once
         initTimerA_StateSwitch(LeftTimeofCurState);
@@ -718,14 +675,14 @@ void run_step(uint16_t LeftTimeofCurState, uint8_t action){
 /*
  * read time from the RTC(DS3231), and calculate in which state it should be now
  */
-uint16_t GetStep(void){
-
-
-    GetTime();  // get time from DS3231, save it in a global variable "uint16_t Time"
-//    printf("Time: %10u",Time);
-    return (Time / StateDuration);
-
-}
+//uint16_t GetStep(void){
+//
+//
+//    GetTime();  // get time from DS3231, save it in a global variable "uint16_t Time"
+////    printf("Time: %10u",Time);
+//    return (Time / StateDuration);
+//
+//}
 
 
 
@@ -831,37 +788,75 @@ __interrupt void TIMER_ISR_PeriodicWakingup(void){
 
 
     /* perform an action */
-    uint16_t freq,event,result;
-    result = runSampling_Audio();  //sample one audio signal, it takes around 0.3s
-    /* result will be 0 if StateSwitch happens during sampling process */
-    /* we do not process this sampling if result = 0 */
-    if(result){
+    int i;
+    uint16_t event_detectionRes,volt;
+
+    // sample and save the voltage, just for debug and analysis, not necessary for real deployment
+    runSampling_VCC();
+    volt = get_voltage();
+    results_VCC[results_VCC_num*2] = volt;  // log voltage
+
+
+    if(IMAGE_BASED){
+        // for image_based experiments
+        event_detectionRes = capture_image();
+    }
+    else{
+        // for audio_based experiments
+        runSampling_Audio();
+        event_detectionRes = EventDetect(extractFreq());
+    }
+
+    // log detection results
+    results_VCC[results_VCC_num*2+1] = event_detectionRes;
+    results_VCC_num++;
+
+
+
+
+    /* if volt < 2000, we terminate the this iteration, we assume 2000 is our turn-off voltage threshold  */
+    if (volt < 2000){
+        Timer_A_stop(TIMER_BASE_PeriodicWakingup);   // set MC = 00
+        Timer_A_clear(TIMER_BASE_PeriodicWakingup);       // clear TAR
+        Timer_A_stop(TIMER_BASE_StateSwitch);   // set MC = 00
+        Timer_A_clear(TIMER_BASE_StateSwitch);       // clear TAR
+        StateSwitchFlag = 11;
+        termination_flag = 1;
+
+        __bic_SR_register_on_exit(LPM3_bits);
+
+        return;
+    }
+
+
+
+
+    /* event_detectionRes will be 0 if StateSwitch happens during sampling process */
+    /* we do not process this sampling if event_detectionRes = 0 */
+    if(event_detectionRes){
 
         /* get the freq from FFT */
-        freq = extractFreq();
-        event = EventDetect(freq);
+//        freq = extractFreq();
+//        event = EventDetect(freq);
 
-        /* for testing */
+        /* for testing, Phase-3 */
         TestResults[NumOfSense][0] = SavedQtableCnt;
-        TestResults[NumOfSense][1] = freq;
+        TestResults[NumOfSense][1] = event_detectionRes;
         NumOfSense++;
 
         /* log the number of waking ups in each state */
         NumSense[step] += 1;
 
-        if(event > 0){  // if >0 , it means an event happened
+
+
+        if(event_detectionRes > 1){  // if result > 1 , it means an event detected
             reward += RewardWithCatch;
-
-#if DEBUG
-    P1OUT |= BIT1;  // turn on Green LED
-    __delay_cycles(1600000); // 0.2s
-    P1OUT &= ~BIT1; // turn off Green LED
-#endif
-
         }
-        else{  // if < 0 , it means no event happened
+        else{  // no event detected
             reward += PenaltyWithoutCatch;  // no events happened
         }
+
+
     }
 
 
@@ -871,13 +866,11 @@ __interrupt void TIMER_ISR_PeriodicWakingup(void){
      * exit the LPM entered in void step()
      */
     if (StateSwitchFlag == 11){
-        GPIO_setOutputLowOnPin(LEDLoad);  // turn off the extra load LED
         __bic_SR_register_on_exit(LPM3_bits);
     }
 
     /* release the lock */
     PeriodicWakingupFlag = 0;
-
 
 }
 
@@ -918,7 +911,7 @@ void initTimerA_StateSwitch(uint16_t counter){
 #pragma vector=TIMER4_A0_VECTOR
 __interrupt void TIMERA_ISR_StateSwitch(void){
 
-    int i;
+//    int i;
     /*
      * when this interrupt happens, it means the program comes to the end of the current state
      * we need to wake up from LPM, the one in step()
@@ -972,7 +965,19 @@ uint8_t max_q_act(float row[ActionNum]){
 }
 
 
+float get_max(float a, float b){
 
+    if (a > b) return a;
+    else return b;
+
+}
+
+float get_abs(float a){
+
+    if(a < 0) return -a;
+    else return a;
+
+}
 
 //******************************************************************************
 // Functions for FFT_based event detection
@@ -985,27 +990,28 @@ uint16_t extractFreq(void){
     uint16_t freqList[5] = {0};
     int i,counter,sum;
 
-    // do 5 times of FFT
-    for(i = 0; i < 5; i++){
-        freqList[i] = runFftWithLea(&dataRecorded[i*256]);
-    }
+//    // do 5 times of FFT
+//    for(i = 0; i < 5; i++){
+//        freqList[i] = runFftWithLea(&dataRecorded[i*256]);
+//    }
+//
+//    // check if targeted frequency number is more than 3
+//    counter = 0;
+//    sum = 0;
+//    for(i = 0; i < 5; i++){
+//        if( freqList[i] > 1450 && freqList[i] < 2450){
+//            counter++;
+//            sum += freqList[i];
+//        }
+//    }
+//
+//
+//    if( counter <= 3)  // if counter less than the threshold, it means there is no-event
+//        return 0;
+//    else    // else, we return the averaged frequency value
+//        return sum/counter;
 
-    // check if targeted frequency number is more than 3
-    counter = 0;
-    sum = 0;
-    for(i = 0; i < 5; i++){
-        if( freqList[i] > 1450 && freqList[i] < 2450){
-            counter++;
-            sum += freqList[i];
-        }
-    }
-
-
-    if( counter <= 3)  // if counter less than the threshold, it means there is no-event
-        return 0;
-    else    // else, we return the averaged frequency value
-        return sum/counter;
-
+    return runFftWithLea(&dataRecorded[0]);
 
 }
 
@@ -1017,31 +1023,18 @@ uint16_t EventDetect(uint16_t freq){
 
     uint16_t event;
 
-
-//    if(freq < 1450) event = 0;
-//    else if( freq > 1450 && freq < 1650) event = 1;  // event1: 1500
-//    else if( freq > 1650 && freq < 1850) event = 2;  // event2: 1700
-//    else if( freq > 1850 && freq < 2050) event = 3;  // event3: 1900
-//    else if( freq > 2050 && freq < 2250) event = 4;  // event4: 2100
-//    else if( freq > 2250 && freq < 2450) event = 5;  // event5: 2300
-//    else event = 0;
-
-
-    /* only support binay event */
-    // I have no idea why the five types do not work again. I tested them before and they did work well
-    // so now, since we do not distinguish different types of events, we only need binary classification
     if (freq < 2500 && freq > 1700)
-        event = 1;
+        event = 9;  // detected an event
     else
-        event = 0;
+        event = 1;  // no event detected
 
 
     return event;
 }
 
+//******************************************************************************
 
-
-void CheckIfConverged_RLEvent(void){
+void CheckIfConverged_Phase1(void){
 
     int i;
     int threshod = 5; // for detect every 2 seconds, threshod = 5 is ok
@@ -1057,13 +1050,17 @@ void CheckIfConverged_RLEvent(void){
 
 
 /* RLEnergy model */
-void CheckIfConverged_RLEnergy(void){
+void CheckIfConverged_Phase2(void){
     /* we compare the current qtable and the previous one to see if there is only a small change */
 
     int i,j,counter;
     float old,new,variation,average;
 
+    int flag = 0;  // when the model is close to convergence, it may only have small changes, e.g. from 3 to 6 but by our definition of big change, (6-3)/3 =  1 is still big
+                   // so we need to rule out this scenario, we only regard it as a big change when the value of old/new is bigger than a number, e.g. 10
+
     variation = 0;
+    counter = 0;
     for(i = 0; i < StateNum; i++){
         for(j = 0; j < ActionNum; j++){
 
@@ -1071,33 +1068,31 @@ void CheckIfConverged_RLEnergy(void){
             new = qtable[i][j]; // current value
 
             if(new != old){
+
                 // if the two are different
                 counter ++;
-                if(new > old){
-                    variation += (new - old) / (old + 0.01);
-                }
-                else{
-                    variation += (old - new) / (old + 0.01);
-                }
+                variation += get_abs(new - old) / (get_abs(old) + 0.01);
+
+                if(get_abs(old) > 20 || get_abs(new) > 20)  flag = 1;
+
             }
 
         }
     }
 
-    if(counter != 0)
-        average = variation / counter;
-    else
-        average = 0;
+    if(counter != 0)  average = variation / counter;
+    else  average = 0;
 
-    if (average < 1){
-        SumOfConvergedResult ++;  // increase the result by one
+
+    if (average < 1 || flag == 0){
+        SumOfConvergedResult ++;  // increase the result by one, only small changes happened or no change at all
     }
     else{
         SumOfConvergedResult = 0; // if not, we reset it to zero, because we require *consecutive* small changes
     }
 
     if(SumOfConvergedResult >= ConvergeCondition){
-        // if it reaches the converged condition, we set the ConvergedFlag
+        // if it reaches the converged condition, we set the ConvergedFlag to 1
         ConvergedFlag = 1;
     }
 
@@ -1143,145 +1138,101 @@ void SaveQtabletoLog(void){
 }
 
 
-
+/* according to the voltage level, return the current energy level
+ * image-based experiments and audio-based experiments use different capacitor combinations
+ * you have to do some experiments to decide how to discretize the voltage levels based on your specific combination of capacitors
+ * Ideally, energy level should correspond to the action list. Different actions should cause the system to either go up or go down in energy levels
+ * if one energy level is so wide that even doing different actions will stay in the same energy level, then there is not difference between taking different actions
+ * which is not we want. we want the system to behave differently when you take different actions and that makes why our waking-up decision-making matters
+ * for better investigate the effect of energy level, it is advised to do it in the simulation where you can change your discretizing strategy easily
+ * */
 uint16_t getEnergyLevel(void){
-/* according to the voltage level, return the current energy level  */
 
 
 
     uint16_t volt;
-    volt = get_voltage_StableVersion();
+    runSampling_VCC();
+    volt = get_voltage();  // after we use 1.2V ref voltage, it is quite stable, we do not need the stable version anymore
 
 
-    switch(SW_Mode){
+    if(IMAGE_BASED){
 
-    case SW4:
-        /* the board can not distinguish between EL 0 and 1 in SW_Mode 4 */
-        /* here, it means we have 5 capacitors connected */
-        if(volt < 717){
+        switch(SW_Mode){
 
+        case SW4:
+            /* SW4 = we have 5 capacitors connected */
+            if      (volt < 2200) EL = 0;  // those threshold numbers are obtained by experiments where you log how many times of event detection each energy level supports
+            else if (volt < 2500) EL = 1;
+            else if (volt < 2800) EL = 2;
+            else                  EL = 3;
+            break;
 
-            if(PreEL == 0){
-                EL = 0; break;
-            }
+        case SW3:
+            /* SW3 = we have 4 capacitors connected */
+            if      (volt < 2300) EL = 0;
+            else if (volt < 2850) EL = 1;
+            else                  EL = 2;
+            break;
 
+        case SW2:
+            /* SW2 = we have 3 capacitors connected */
+            if (volt < 2700) EL = 0;
+            else             EL = 1;
+            break;
 
-
-            else if(PreEL == 1){
-
-                if(PrePreEL == 1){
-                    // because it is charging in the pre state, we lower down the threshold by one
-                    if(action >= 2){ // action = 2,3
-                        EL = 0; break;
-                    }
-                    else{  // action = 0,1
-                        EL = 1; break;
-                    }
-                }
-
-                /* if it is the first time EL = 1 */
-                else{
-                    if(action == 0){
-                        EL = 1; break;
-                    }
-                    else{
-                        EL = 0; break;
-                    }
-                }
-            }
-
-
-
-            else if(PreEL == 2){
-
-                /* not the first time */
-                if(PrePreEL == 2){
-
-                    /* if it is the third time */
-                    if(PrePrePreEL == 2){
-
-                        // because in the past three states, it is also charging. we lower down the threshold by one
-                        if( PrePreaction + Preaction + action <= 2){ // pre three actions = (0,0,0),(0,1,0),(0,2,0),(0,1,1), no order in bracket
-                            EL = 2; break;
-                        }
-                        else if(action + Preaction == 3){ // pre three actions = (0,1,2),(0,0,3), no order in bracket
-                            EL = 1; break;
-                        }
-                        else{  // otherwise
-                            EL = 0; break;
-                        }
-
-
-                    }
-                    else{
-                        if(action + Preaction <= 1){  // pre two actions = (0,0),(0,1), no order in bracket
-                            EL = 2; break;
-                        }
-                        else if(action + Preaction == 2){  // pre two actions = (1,1),(0,2), no order in bracket
-                            EL = 1; break;
-                        }
-                        else{  // otherwise
-                            EL = 0; break;
-                        }
-                    }
-                }
-
-                /* else, it comes to EL=2 for the first time */
-                else{
-                    if( action <= 1 ){   // action = 0,1
-                        EL = 2; break;
-                    }
-                    else if(action == 2){  // action = 2
-                        EL = 1; break;
-                    }
-                    else{    // action = 3
-                        EL = 0; break;
-                    }
-                }
-
-            }
-
-            else{ // PreEL = -1,3,4
-                EL = 2; break;
-            }
-
-        }
-
-        else if (volt < 751)
-            EL = 3;
-        else
-            EL = 4;
-        break;
-
-
-    case SW3:
-        /* here, it means we have 4 capacitors connected */
-        if (volt < 717){
-            __no_operation();
+        default:
+            /* otherwise */
             EL = 0;
-        }
-        else if (volt < 732){
-            __no_operation();
-            EL = 1;
-        }
-        else{
-            EL = 2;
-        }
+            break;
 
-        break;
-
-
-    default:
-        /* otherwise */
-        EL = 0;
-        break;
+        }
 
     }
+
+    else{
+
+        switch(SW_Mode){
+
+        // for audio-based, we only use SW=2,3
+        case SW3:
+            /* SW3 = we have 4 capacitors connected */
+            if      (volt < 2140) EL = 0;
+            else if (volt < 2280) EL = 1;
+            else if (volt < 2600) EL = 2;
+            else                  EL = 3;
+            break;
+
+        case SW2:
+            /* SW2 = we have 3 capacitors connected */
+            if      (volt < 2400) EL = 0;
+            else if (volt < 3050) EL = 1;
+            else                  EL = 2;
+            break;
+
+        default:
+            /* otherwise */
+            EL = 0;
+            break;
+
+        }
+
+    }
+
+
+
+
+
+
+
+
+
+
 
     return volt;
 }
 
 
+/* get the integer of SW mode */
 uint16_t get_SW_Mode(void){
     // because our SW_Mode is typedef enum, not integer
     // we need this function to convert it into number so that we can save easily
@@ -1308,13 +1259,16 @@ uint16_t get_SW_Mode(void){
     }
 }
 
-
+/* check if waking up every 1 seconds is executable, based on the current energy residue */
+/* it should support 30+ times of wake up
+ * this function is used for Phase1ConvergeRate() where we only use high walking up frequency to profile the event pattern
+ * */
 int IfFreq1Executable(uint16_t step){
-    /* check if waking up every 1 seconds is executable, based on the current energy residue */
 
     uint16_t volt;
-    volt = get_voltage_StableVersion();
-
+//    volt = get_voltage_StableVersion();
+    runSampling_VCC();
+    volt = get_voltage();
 
     Volts[step] = volt;  // log
     SWModes[step] = get_SW_Mode();  // log
@@ -1329,14 +1283,16 @@ int IfFreq1Executable(uint16_t step){
         return 0;
 
     case SW2:
-        return 0;
+        if (volt > 2700) return 1;   // those threshold numbers are obtained by experiments
+        else return 0;
 
     case SW3:
-        if( volt > 717 ) return 1;  // it should support 30+ times of wake up
+        if(volt > 2850) return 1;
         else return 0;
 
     case SW4:
-        return 1;
+        if(volt > 2200) return 1;
+        else return 0;
 
     default:
         return 0;
@@ -1346,10 +1302,12 @@ int IfFreq1Executable(uint16_t step){
 
 int IfFreq2Executable(uint16_t step){
     /* check if waking up every 2 seconds is executable, based on the current energy residue */
+    /* it should support at least 15times of event detection */
 
     uint16_t volt;
-    volt = get_voltage_StableVersion();
-
+//    volt = get_voltage_StableVersion();
+    runSampling_VCC();
+    volt = get_voltage();
 
     Volts[step] = volt;  // log
     SWModes[step] = get_SW_Mode();  // log
@@ -1362,18 +1320,21 @@ int IfFreq2Executable(uint16_t step){
         return 0;
 
     case SW1:
-        return 0;
+        if (volt > 3400) return 1;   // those threshold numbers are obtained by experiments
+        else return 0;
 
     case SW2:
-        if( volt > 717 ) return 1;
+        if( volt > 2400 ) return 1;
         else return 0;
 
     case SW3:
-        return 1;
+        if (volt > 2200) return 1;
+        else return 0;
 
 
     case SW4:
-        return 1;
+        if (volt > 2130) return 1;
+        else return 0;
 
     default:
         return 0;
@@ -1387,23 +1348,30 @@ void EndofIteration(int type){
 
     int i;
 
-    /* EndofIteration is shared by runQLearning(); testQLearning(); RLEventConvergeRate() */
+    /* EndofIteration is shared by runQLearning(); testQLearning(); Phase1ConvergeRate() */
     /* we use type to identify the caller function */
     // runQLearning(); type = 0;
     // testQLearning(); type = 1;
-    // RLEventConvergeRate(); type = 2;
+    // Phase1ConvergeRate(); type = 2;
 
-    if(type == 2){ // RLEventConvergeRate()
-        /* check if the RLEnvent model has converged */
-        CheckIfConverged_RLEvent();
-    }
-    else{ // runQLearning,testQLearning
-        /* check if the RLEnergy model has converged */
-        CheckIfConverged_RLEnergy();
-    }
+//    if(!TESTING_FLAG){  // we only check convergence in training phase
+//        if(type == 2){ // Phase1ConvergeRate()
+//            /* check if the RLEnvent model has converged */
+//            CheckIfConverged_Phase1();
+//        }
+//        else{ // runQLearning,testQLearning
+//            /* check if the RLEnergy model has converged */
+//            CheckIfConverged_Phase2();
+//        }
+//    }
 
-    /* after each iteration, we save the current qtable to QtableLog */
+
+
+    /* check if converged and save the current qtable to QtableLog */
+
+//    CheckIfConverged_Phase2();
     SaveQtabletoLog();
+
 
     /* reset Actions and Rewards after each iteration*/
     memset(Actions,'1',4*StepNum);
@@ -1421,30 +1389,30 @@ void EndofIteration(int type){
 
     /* if the system has converged, we blink the LED slowly */
     if(ConvergedFlag == 1){
+        i = 3;
         while(1){
-            P1OUT |= BIT0;
-            __delay_cycles(4000000);
-            P1OUT &= ~BIT0;
-            __delay_cycles(8000000);
+            GPIO_setOutputHighOnPin(REDLED);
+            __delay_cycles(1000000);
+            GPIO_setOutputLowOnPin(REDLED);
+            __delay_cycles(1000000);
         }
+        __bis_SR_register(LPM3_bits + GIE);
     }
 
     /* if already 10 runs, we blink the LED */
     if(SavedQtableCnt >= 10){
+        i = 3;
         while(1){
-            for(i=0; i<3; i++){  // blink
-                P1OUT |= BIT0;
-                __delay_cycles(500000);
-                P1OUT &= ~BIT0;
-                __delay_cycles(500000);
-            }
-            __delay_cycles(1500000);
-            __delay_cycles(1500000);
+            GPIO_setOutputHighOnPin(REDLED);
+            __delay_cycles(1000000);
+            GPIO_setOutputLowOnPin(REDLED);
+            __delay_cycles(1000000);
         }
+        __bis_SR_register(LPM3_bits + GIE);
     }
 
     /* turn on Red LED, this iteration ends here*/
-    P1OUT |= BIT0;
+//    P1OUT |= BIT0;
 
     /* reset parameters */
     reward = 0;
@@ -1452,6 +1420,14 @@ void EndofIteration(int type){
     state = 0;
     action = 0;
     PowerOutageFlag = 0;
+
+    i = 1;
+    while(1){
+        GPIO_setOutputHighOnPin(REDLED);
+        __delay_cycles(1000000);
+        GPIO_setOutputLowOnPin(REDLED);
+        __delay_cycles(1000000);
+    }
 
     /* stop the program */
     __bis_SR_register(LPM3_bits + GIE);

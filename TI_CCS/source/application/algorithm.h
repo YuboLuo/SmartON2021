@@ -20,14 +20,16 @@
 /*
  * qlearning parameters
  */
-#define EPSILON 1.0
-#define MAX_EPSILON 1.0
-#define MIN_EPSILON 0.01
+//#define EPSILON 1.0
+//#define MAX_EPSILON 1.0
+//#define MIN_EPSILON 0.01
 
 #define GAMMA 0.618        // Discounting rate
 #define LEARNING_RATE 0.7  // Learning rate
-#define DECAY_RATE 0.03    // Exponential decay rate for exploration prob
-#define EPISODES 50        // Total episodes for training
+
+
+//#define DECAY_RATE 0.03    // Exponential decay rate for exploration prob
+//#define EPISODES 50        // Total episodes for training
 
 
 
@@ -37,24 +39,30 @@
 #define ActionNum 4// 2  // how many actions in total in the action list
 #define Period 1200  // time space
 #define StateDuration 30  // state duration
-#define StateNum 20 //40 // how many states in total
+#define StateNum 16 // 20 //40 // how many states in total
 #define StepNum 4 // 40 // how many steps in one iteration
+#define TotalEnergyLevels 4 // 5
+
 
 #define QtableLogCapacity 10 // how many iterations we can save in the log
 
-#define RewardWithCatch 10 // 30
+#define RewardWithCatch 5 // 10
 #define PenaltyWithoutCatch -1
 #define ConvergeCondition 5    // if the qtable does not have big change in ConvergeCondition consecutive iterations, we think it is converged
 
-/* For timer counter, we use VLO for ACLK, in LPM F_typ=8KHz, in active mode, F_typ=9.4KHz */
-#define NumOfOneSecond 230
+/* For timer counter, we use VLO for ACLK, in LPM F_typ=8KHz, in active mode, F_typ=9.4KHz
+ * got this number empirically, it varies for different environment
+ * because the oscillator frequency varies according to your environment, e.g. temperature
+ * my experience is that it is between 230 and 240
+*/
+#define NumOfOneSecond 235  // 230, 240
 
 
 void initTimer_PeriodicWakingup(uint8_t action);
 void initTimerA_StateSwitch(uint16_t counter);
 
 uint8_t max_q_act(float row[ActionNum]);
-
+float get_abs(float a);
 
 uint8_t Get_RandomAction(int num); // get a random action from the [0,num]
 float Get_RandomFloat(void);
@@ -75,8 +83,8 @@ extern uint16_t getEnergyLevel(void); // get energy level
 
 extern void SaveQtabletoLog(void); // save qtable to log
 
-extern void CheckIfConverged_RLEnergy(void); // compare the current qtable and the previous one
-extern void CheckIfConverged_RLEvent(void); // RLEvent model
+extern void CheckIfConverged_Phase2(void); // compare the current qtable and the previous one
+extern void CheckIfConverged_Phase1(void); // RLEvent model
 
 /* Functions for FFT_based event detection */
 extern uint16_t EventDetect(uint16_t freq);
@@ -87,6 +95,8 @@ extern int IfFreq1Executable(uint16_t);
 extern int IfFreq2Executable(uint16_t);
 
 void EndofIteration(int type);
+
+float get_max(float a, float b);
 
 #endif /* ALGORITHM_H_ */
 

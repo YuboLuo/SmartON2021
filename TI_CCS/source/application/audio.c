@@ -6,10 +6,18 @@
  */
 
 //******************************************************************************
-//!  main.c
+//!
+//!  This file includes the voltage/audio sampling.
+//!  We developed our audio/voltage sampling module based on
+//!  BOOSTXL-AUDIO Audio Record and Playback Example
+//!  Example code can be downloaded from
+//!  https://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP-EXP430FR5994/latest/index_FDS.html
 //!
 //!  Description: Sound detection demo on MSP-EXP430FR5994
 //!               using ADMP401
+//!
+//!               (LED may not work as mentioned here, because LED-control was changed very frequently
+//!               during experiments and I am not sure in what status it is now)
 //!
 //!               the MCU samples a 300ms audio signal, and then uses threshold method to detect if an event happens
 //!               Red LED1 indicating the MCU is sampling
@@ -40,7 +48,7 @@ uint16_t dataRecorded[SAMPLES_LENGTH] = {0};
 
 #pragma LOCATION(results_VCC, 0x09800);
 #pragma PERSISTENT(results_VCC)
-uint16_t results_VCC[200] = {0};
+uint16_t results_VCC[1000] = {0};
 
 #pragma PERSISTENT(results_VCC_num)
 uint16_t results_VCC_num = 0;
@@ -125,50 +133,7 @@ uint16_t get_voltage_StableVersion(void){
 
 
 
-void test_VCC(void){
-//
-    int i;
-    uint16_t range;
-    for( i = 0; i<10; i++){
-        runSampling_VCC();
-        range = get_voltage();
-        results_VCC[results_VCC_num++] = range;
 
-
-        // delay for one second before start the next sensing test
-        __delay_cycles(4000000);
-
-        continue;
-    }
-
-}
-
-
-
-void test_Audio(void){
-
-
-    int i;
-    uint16_t diff;
-    for( i = 0; i<10; i++){
-
-        runSampling_Audio();
-        diff = get_threshold();  // get the diff value which will be compared to the threshold
-
-
-        if(diff > 200){  // if high, it means an event happened
-            results_Audio[results_Audio_num++] = 0xaaaa;
-            P1OUT |= BIT1;   // turn on the LED
-            __delay_cycles(1600000);  // light up the green LED for 0.2s
-            P1OUT &= ~BIT1;  // turn off the LED
-        }
-        else{
-            results_Audio[results_Audio_num++] = 0x1111;  // no events happened
-        }
-
-
-    }
-}
 
 
 
@@ -178,16 +143,15 @@ uint8_t runSampling_Audio(void){
 
 #if DEBUG
     /* turn on RED LED when starting sampling, it should be turned off in DMA Interrupt */
-    P1OUT |= BIT0;
+    GPIO_setOutputHighOnPin(REDLED)); // P1OUT |= BIT0;
 #endif
 
-    /* add an extra load for event-sensing */
-    GPIO_setOutputHighOnPin(LEDLoad);
+
 
 
 //    /* turn on RED LED when starting sampling, it should be turned off in DMA Interrupt */
 //    if(DEBUG == 0 && DebugOntheFly == 1)
-//        P1OUT |= BIT0;
+//        GPIO_setOutputHighOnPin(REDLED)); // P1OUT |= BIT0;
 
 
     /* Initialize the microphone for recording */
@@ -204,7 +168,6 @@ uint8_t runSampling_Audio(void){
 //    /* StateSwitch may happen right before we enter LPM3, e.g. here */
 //    if(StateSwitchFlag == 11){
 //        Audio_shutdownCollect();
-//        GPIO_setOutputLowOnPin(LEDLoad);  // turn off extra load, originally should by done by DMA ISR
 //        return 0;
 //    }
 
@@ -234,7 +197,6 @@ uint8_t runSampling_Audio(void){
      */
     if(StateSwitchFlag == 11){
         Audio_shutdownCollect();
-        GPIO_setOutputLowOnPin(LEDLoad);  // turn off extra load, originally should by done by DMA ISR
         return 0;
     }
 
@@ -250,7 +212,7 @@ uint8_t runSampling_VCC(void)
 
 //    uint16_t recording = 0;
 
-//    P1OUT |= BIT0; // turn on RED LED, it will be turned off in DMA Interrupt
+//    GPIO_setOutputHighOnPin(REDLED)); // P1OUT |= BIT0; // turn on RED LED, it will be turned off in DMA Interrupt
 
     /* Initialize the timer/ADC/IMA for voltage logging */
     gAudioConfig.bufferSize = VCC_sample_num;
@@ -382,7 +344,7 @@ void Audio_setupCollect(Audio_configParams * audioConfig)
 
         // Configure internal reference
         while(Ref_A_isRefGenBusy(REF_A_BASE));              // If ref generator busy, WAIT
-        Ref_A_setReferenceVoltage(REF_A_BASE, REF_A_VREF2_0V);
+        Ref_A_setReferenceVoltage(REF_A_BASE, REF_A_VREF1_2V);
         Ref_A_enableReferenceVoltage(REF_A_BASE);
     }
 
@@ -396,7 +358,11 @@ void Audio_setupCollect(Audio_configParams * audioConfig)
         // ASMP401: the small red audio IC needs 0.2s initialization time before its stable sensing
         // later we found out if powered up by capacitor, ASMP401 needs longer initialization period
         // threshold-based sound-event detection will fail if we start sampling before the audio is stable
-        __delay_cycles(4000000); // 0.5s  // we tried 0.2s but it does not work when capacitor is the power supply
+        // we tried 0.2s but it does not work when capacitor is the power supply
+
+        //for CPSWeek2021, delaying too long makes the audio-sensing consume more energy than the camera which is not good
+        // so we have to decrease the delay here.
+        __delay_cycles(800000); //
     }
 
 }
@@ -441,7 +407,7 @@ void Audio_shutdownCollect(void)
     DMA_disableTransfers(DMA_CHANNEL_1);
     // Disable DMA channel 1 interrupt
     DMA_disableInterrupt(DMA_CHANNEL_1);
-//    P1OUT &= ~BIT0;  // turn off LED
+//    GPIO_setOutputLowOnPin(REDLED)); // P1OUT &= ~BIT0;  // turn off LED
 
     /*
      * audio stop collect
@@ -473,22 +439,33 @@ __interrupt void dmaIsrHandler(void)
 {
     switch (__even_in_range(DMAIV, DMAIV_DMA2IFG))
     {
-        case DMAIV_DMA0IFG: break;
+        case DMAIV_DMA0IFG:
+
+//            write_camera(0x0100, 0b00000000); // set the camera to standby mode
+            GPIO_setOutputLowOnPin(CMAERA_POWER); // turn off the camera's power
+
+
+            DMA_disableInterrupt(DMA_CHANNEL_0);
+            DMA_clearInterrupt(DMA_CHANNEL_0);
+            image_ready = 1;
+
+            break;
+
+
         case DMAIV_DMA1IFG:
 
 
 #if DEBUG
             /* turn off RED LED which means that the audio sampling is finished now */
-            P1OUT &= ~BIT0;  // turn off LED
+            GPIO_setOutputLowOnPin(REDLED)); // P1OUT &= ~BIT0;  // turn off LED
 #endif
 
 //            if(DEBUG == 0 && DebugOntheFly == 1)
 //                /* turn off RED LED which means that the audio sampling is finished now */
-//                P1OUT &= ~BIT0;  // turn off LED
+//                GPIO_setOutputLowOnPin(REDLED)); // P1OUT &= ~BIT0;  // turn off LED
 
 
-            /* we add an extra load for event-sensing, turn off here when sensing is finished*/
-            GPIO_setOutputLowOnPin(LEDLoad);
+
 
 
             /* shut down audio collect module */
@@ -497,6 +474,9 @@ __interrupt void dmaIsrHandler(void)
             // Start Cpu on exit
             __bic_SR_register_on_exit(LPM3_bits);
             break;
+
+
+
         default: break;
    }
 }

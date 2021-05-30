@@ -1,3 +1,6 @@
+/* for generating a random number, copied from TI official example code */
+
+
 /* --COPYRIGHT--,FRAM-Utilities
  * Copyright (c) 2015, Texas Instruments Incorporated
  * All rights reserved.

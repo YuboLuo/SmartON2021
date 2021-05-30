@@ -23,6 +23,9 @@
 //
 //   based on this demo example code, we use MSP430FR5994 to receive time info
 //   from external real-time clock, DS3231.
+//
+//   DS3231 was not used in DCOSS2021 submission as we eliminated the use of RTC
+//
 //******************************************************************************
 
 
@@ -43,7 +46,7 @@ uint8_t ReceiveIndex = 0;
 uint8_t TransmitBuffer[MAX_BUFFER_SIZE] = {0};
 
 // time
-uint16_t Time;
+uint16_t Time;  // call GetTime() and time will be saved in Time variable
 
 void GetTime(void){
 

@@ -9,9 +9,10 @@
 #define SVS_H_
 
 
-void initTimerB_SupplyVoltage(int count);
 void SW_AddNew(void);
 
 extern uint16_t SupplyVoltage;
+
+void initTimerB_SupplyVoltage(uint8_t);
 
 #endif /* SVS_H_ */

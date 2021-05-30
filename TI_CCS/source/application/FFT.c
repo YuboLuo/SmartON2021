@@ -37,15 +37,23 @@
 //!  August 2019
 //******************************************************************************
 
-//#include <driverlib.h>
-//#include <stdint.h>
-////#include <grlib.h>
-//#include <stdio.h>
-//#include <math.h>
-//#include "DSPLib.h"
-//#include "FFT.h"
-//#include "FFT_430.h"
-//#include "benchmark.h"
+/*
+ * Developed FFT code from TI official example code for MSP430FR5994 evaluation board
+ * Project name: BOOSTXL-AUDIO_430BOOST-SHARPLCD_FFT_FIR_LEA_MSP430FR5994
+ * download link: https://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP-EXP430FR5994/latest/index_FDS.html
+ * We extracted FFT module and used it in our project
+ *
+ * FFT module includes the following files:
+ *  FFT.c
+ *  FFT.h
+ *  FFT_430.asm
+ *  FFT_430.h
+ *  FFT_430.s43
+ *  benchmark.c
+ *  benchmark.h
+ *
+ *  FFT takes advantage of hardware acceleration and it is super fast
+ * */
 
 #include "global.h"
 
@@ -70,7 +78,7 @@ uint16_t NumLargestFreq = 8;
 
 
 
-uint16_t i, index;
+uint16_t index;
 int16_t imag, real, real_abs, imag_abs, mag, max, min;
 int16_t scale;
 
