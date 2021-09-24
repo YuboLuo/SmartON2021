@@ -1,0 +1,12 @@
+.\dslite --mode memory --config=.\user_files\configs\MSP430FR5994.ccxml --range=0x1c00,500 --output=C:\Users\yubo\Documents\MATLAB\Memory\output
+
+.\dslite --mode load --config=.\user_files\configs\MSP430FR5994.ccxml C:\Users\yubo\Documents\MATLAB\Memory\1KB_1,0x1c00
+
+
+.\dslite --mode memory --config=.\user_files\configs\MSP430FR5994.ccxml --range=0x9800,400 --output=C:\Users\yubo\Documents\PycharmProjects\SpotON\utils\cutoff_voltage\data\camera_cutoff
+
+
+.\dslite --mode memory --config=.\user_files\configs\MSP430FR5994.ccxml --range=0x11000,1888 --output=C:\Users\yubo\Documents\PycharmProjects\SpotON\utils\detection_analysis\data\camera\qtables_RLEnergy_test
+
+
+.\dslite --mode memory --config=.\user_files\configs\MSP430FR5994.ccxml --range=0x14000,2400 --output=C:\Users\yubo\Documents\PycharmProjects\SpotON\utils\detection_analysis\data\camera\test_result
