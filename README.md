@@ -10,4 +10,6 @@ This folder includes files for designing the PCB board and library files for som
 ## Simulation
 This folder includes files for the software simulation.
 
-Each subfolder has their own README file, please go there for more detailed explanation.
+## Experiments
+All experiment-related results, e.g. raw sensor data.
+
