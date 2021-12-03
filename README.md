@@ -13,3 +13,21 @@ This folder includes files for the software simulation.
 ## Experiments
 All experiment-related results, e.g. raw sensor data.
 
+## Reference 
+Please cite this paper in the following format. 
+
+@INPROCEEDINGS {smarton,
+author = {Y. Luo and S. Nirjon},
+booktitle = {2021 17th International Conference on Distributed Computing in Sensor Systems (DCOSS)},
+title = {SmartON: Just-in-Time Active Event Detection on Energy Harvesting Systems},
+year = {2021},
+volume = {},
+issn = {},
+pages = {35-44},
+keywords = {event detection;power system management;capacitance;energy efficiency;hardware;software;sensor systems},
+doi = {10.1109/DCOSS52077.2021.00018},
+url = {https://doi.ieeecomputersociety.org/10.1109/DCOSS52077.2021.00018},
+publisher = {IEEE Computer Society},
+address = {Los Alamitos, CA, USA},
+month = {jul}
+}
