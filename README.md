@@ -14,7 +14,7 @@ This folder includes files for the software simulation.
 All experiment-related results, e.g. raw sensor data.
 
 ## Reference 
-Please cite this paper in the following format. 
+Please cite this paper in the following format for Latex. 
 
 @INPROCEEDINGS {smarton,
 author = {Y. Luo and S. Nirjon},
